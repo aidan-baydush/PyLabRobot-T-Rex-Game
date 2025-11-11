@@ -1,0 +1,143 @@
+def get_digit_wells(digit_value, col_start):
+    """
+    Get wells for a digit spanning 3 columns (col_start to col_start+2)
+    Rows A-E form the 7-segment display
+    """
+    col_left = col_start
+    col_mid = col_start + 1
+    col_right = col_start + 2
+
+async def display_number(lh, number: int):
+    """Display a number on the 7-segment display using wells"""
+    if number < 0 or number > 9999:
+        raise ValueError("Number must be between 0 and 9999")
+    
+    game_plate = lh.deck.get_resource("game")
+    res = lh.deck.get_resource("res")
+    
+    # Display positions: ones, tens, hundreds, thousands (right to left)
+    digits_str = str(number).zfill(4)[::-1]
+    digit_positions = [10, 7, 4, 1]
+    
+    # Track current display state
+    current_display = [set() for _ in range(4)]
+    if hasattr(lh, '_current_display'):
+        current_display = lh._current_display
+    
+    for idx, (digit_char, col_start) in enumerate(zip(digits_str, digit_positions)):
+        # Skip leading zeros
+        if number < 10 ** idx:
+            continue
+            
+        digit = int(digit_char)
+        new_wells = set(get_digit_wells(digit, col_start))
+        old_wells = current_display[idx]
+        
+        wells_to_remove = old_wells - new_wells
+        wells_to_add = new_wells - old_wells
+        
+        # Remove old segments
+        for well_id in wells_to_remove:
+            tip_spot = await get_next_tip_spot(lh)
+            await lh.pick_up_tips(tip_spots=tip_spot, use_channels=[0])
+            await lh.aspirate(resources=[game_plate.get_well(well_id)], vols=[300])
+            await lh.dispense(resources=[res.get_well("A1")], vols=[300])
+            await lh.discard_tips()
+        
+        # Add new segments
+        for well_id in wells_to_add:
+            tip_spot = await get_next_tip_spot(lh)
+            await lh.pick_up_tips(tip_spots=tip_spot, use_channels=[0])
+            await lh.aspirate(resources=[res.get_well("A1")], vols=[300])
+            await lh.dispense(resources=[game_plate.get_well(well_id)], vols=[300])
+            await lh.discard_tips()
+        
+        current_display[idx] = new_wells
+    
+    lh._current_display = current_display
+
+
+async def push_board(self):
+        """Move all obstacles one column to the left"""
+        no_dino = self.board.copy()
+        for pos in self.dino_pos:
+            if pos in no_dino:
+                no_dino.remove(pos)
+        
+        # Sort by column number (left to right) to process leftmost obstacles first
+        no_dino.sort(key=lambda x: int(x[1:]))
+        
+        for pos in no_dino:
+            current_col = int(pos[1:])
+            
+            if current_col == 1:  # Reached leftmost column
+                await self._pipette_well_to_res(source=pos, vols=self.obstacle_vol)
+                self.score += 1
+            else:
+                # Move one column to the left
+                next_col = current_col - 1
+                next_pos = f'{pos[0]}{next_col}'
+                
+                # Check collision with dino
+                if next_pos in self.dino_pos:
+                    await self.game_over()
+                
+                # Move obstacle left by one column
+                await self._pipette_plate_to_plate(source=pos, dest=next_pos, vols=self.obstacle_vol)
+
+    async def dino_jump(self):
+        """Make the dino jump (move from H2 to F2)"""
+        # Only jump if F2 is not occupied by an obstacle
+        if 'H2' in self.dino_pos and 'F2' not in self.board:
+            await self._pipette_plate_to_plate(dest='F2', source='H2', vols=self.dino_vol)
+            self.dino_pos.remove('H2')
+            self.dino_pos.append('F2')
+
+    async def dino_squat(self):
+        """Make the dino squat (remove G2)"""
+        if 'G2' in self.dino_pos:
+            await self._pipette_well_to_res(source='G2', vols=self.dino_vol)
+            self.dino_pos.remove('G2')
+
+    async def dino_return(self):
+        """Return dino to normal position"""
+        # Return from jump - only if H2 is not occupied
+        if 'F2' in self.dino_pos and 'H2' not in self.dino_pos and 'H2' not in self.board:
+            await self._pipette_plate_to_plate(dest='H2', source='F2', vols=self.dino_vol)
+            self.dino_pos.remove('F2')
+            self.dino_pos.append('H2')
+            # Only return from squat if G2 is not occupied by an obstacle
+        if 'G2' not in self.dino_pos and 'H2' in self.dino_pos and 'G2' not in self.board:
+            # Return from squat
+            await self._pipette_res_to_well(dest='G2', vols=self.dino_vol)
+            self.dino_pos.append('G2')
+
+
+
+for i in range(turns):
+        print(f"\nRound {i+1} | Score: {dino_obj.score}")
+        
+        # Get user input
+        user_input = input('Your move (w/s/space): ')
+        
+        if user_input == 's':
+            await dino_obj.dino_squat()
+        elif user_input == 'w':
+            await dino_obj.dino_jump()
+        elif user_input == ' ':
+            await dino_obj.dino_return()
+        else:
+            print("Invalid input! Use w, s, or space")
+        
+        # Push board and update display
+        await dino_obj.push_board()
+        
+        # Add new obstacle every 3 rounds
+        if i % 3 == 0:
+            await dino_obj.new_obstacle()
+        
+        # Update score display
+        await display_number(dino_obj.lh, dino_obj.score)
+    
+    print("\nGame completed!")
+    sys.exit(0)
