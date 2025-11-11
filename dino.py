@@ -111,7 +111,7 @@ class Dino:
                 if f'{pos[0]}{int(pos[-1])-1}' in self.dino_pos:
                     self.game_over()                                        # end game
                 # else, push all board obstacles over
-                await self._pipette_plate_to_plate(source=pos, vols=self.obstacle_vol, dest=f'{pos[0]}{int(pos[-1])-1}')
+                await self._pipette_plate_to_plate(source=pos, vols=self.obstacle_vol, dest=f'{pos[0]}{str(int(pos[-1])-1)}')
 
     async def dino_jump(self):
         await self._pipette_plate_to_plate(dest='F2', source='H2', vols=self.dino_vol)
